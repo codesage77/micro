@@ -63,7 +63,7 @@ func TestService(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := s.Start(); err != nil {
+	if err := s.Start(true); err != nil {
 		t.Fatal(err)
 	}
 

@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/codesage77/micro/server"
+	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -172,7 +172,7 @@ func (s *Service) Server() *server.HttpServer {
 	return s.server
 }
 
-func (s *Service) Start() error {
+func (s *Service) Start(runInBackground bool) error {
 	for _, fn := range s.opts.BeforeStart {
 		if err := fn(); err != nil {
 			return err
@@ -190,26 +190,15 @@ func (s *Service) Start() error {
 		}
 	}
 
-	ch := make(chan os.Signal, 1)
-	if s.opts.Signal {
-		signals := []os.Signal{
-			syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGKILL,
-		}
-		signal.Notify(ch, signals...)
+	if runInBackground {
+		log.Info().Msgf("listening for service shutdown in background.")
+		go func() {
+			s.listenForShutdown()
+		}()
+	} else {
+		log.Info().Msgf("listening for service shutdown in foreground.")
+		s.listenForShutdown()
 	}
-
-	go func() {
-		select {
-		// wait on kill signal
-		case <-ch:
-		// wait on context cancel
-		case <-s.opts.Context.Done():
-		}
-
-		if err := s.Stop(); err != nil {
-			log.Info().Msgf("An error occurred when stopping the service %v", err)
-		}
-	}()
 
 	return nil
 }
@@ -239,6 +228,27 @@ func (s *Service) Stop() error {
 
 func (s *Service) String() string {
 	return s.name
+}
+
+func (s *Service) listenForShutdown() {
+	ch := make(chan os.Signal, 1)
+	if s.opts.Signal {
+		signals := []os.Signal{
+			syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGKILL,
+		}
+		signal.Notify(ch, signals...)
+	}
+
+	select {
+	// wait on kill signal
+	case <-ch:
+	// wait on context cancel
+	case <-s.opts.Context.Done():
+	}
+
+	if err := s.Stop(); err != nil {
+		log.Info().Msgf("An error occurred when stopping the service %v", err)
+	}
 }
 
 func decorateHandler(h http.Handler, ed EndpointDecorator) http.Handler {
